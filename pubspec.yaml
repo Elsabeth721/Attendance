@@ -115,6 +115,12 @@ dependencies:
   permission_handler: ^11.4.0
   path_provider: ^2.1.1
   open_file: ^3.3.3
+  image_picker: ^1.0.4
+  qr_flutter: ^4.1.0
+  printing: ^5.9.2
+  # pdf: ^3.10.4
+  fps_qr_code_generator: ^1.0.3
+  image: ^4.0.17
 
 dev_dependencies:
   flutter_test:

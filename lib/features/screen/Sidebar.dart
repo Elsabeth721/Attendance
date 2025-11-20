@@ -1,4 +1,5 @@
 import 'package:attendance_management_system/core/constants.dart';
+import 'package:attendance_management_system/features/screen/admin_screen/Id.dart';
 import 'package:attendance_management_system/features/screen/admin_screen/add_student.dart';
 import 'package:attendance_management_system/features/screen/admin_screen/create_todays_attendance.dart';
 import 'package:attendance_management_system/features/screen/admin_screen/all_attendance.dart'; // Add this import
@@ -107,7 +108,7 @@ class SidebarMenu extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildMenuItems(BuildContext context) {
+List<Widget> _buildMenuItems(BuildContext context) {
     if (userRole == 'superadmin') {
       return [
         buildMenuItem(
@@ -192,6 +193,17 @@ class SidebarMenu extends StatelessWidget {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => AllAttendancePage(adminEmail: adminEmail!)),
+            );
+          },
+        ),
+        buildMenuItem(
+          context,
+          Icons.calendar_today,
+          "ID",
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => IdCardManagementPage()),
             );
           },
         ),
