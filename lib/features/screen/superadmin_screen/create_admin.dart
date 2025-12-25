@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:attendance_management_system/features/controllers/superadmin_controllers/admin_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 
 class CreateAdminScreen extends StatefulWidget {
   const CreateAdminScreen({super.key});
@@ -13,18 +14,20 @@ class CreateAdminScreen extends StatefulWidget {
 
 class _CreateAdminScreenState extends State<CreateAdminScreen> {
   final _formKey = GlobalKey<FormState>();
-
   final _usernameController = TextEditingController();
   final _gradeController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
-
   final AdminController _adminController = AdminController();
+  final supabase = Supabase.instance.client;
 
   List<Map<String, dynamic>> _classes = [];
   String? _selectedClassId;
   bool _isCreating = false;
+  bool _isCheckingEmail = false;
+  String? _emailError;
+  bool _isPasswordVisible = false;
 
   @override
   void initState() {
@@ -34,7 +37,7 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
 
   Future<void> _loadClasses() async {
     try {
-      final response = await Supabase.instance.client.from("classes").select();
+      final response = await supabase.from("classes").select();
       setState(() {
         _classes = List<Map<String, dynamic>>.from(response);
       });
@@ -43,8 +46,56 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
     }
   }
 
+  Future<void> _checkEmailDuplicate() async {
+    final email = _emailController.text.trim();
+    
+    if (email.isEmpty) {
+      setState(() => _emailError = null);
+      return;
+    }
+    
+    // Validate email format first
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      setState(() => _emailError = "Please enter a valid email");
+      return;
+    }
+    
+    setState(() {
+      _isCheckingEmail = true;
+      _emailError = null;
+    });
+    
+    try {
+      // Check if email already exists in users table
+      final response = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", email)
+          .maybeSingle();
+      
+      setState(() {
+        _isCheckingEmail = false;
+        if (response != null) {
+          _emailError = "This email is already registered. Please use a different email.";
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isCheckingEmail = false;
+        _emailError = "Failed to check email availability";
+      });
+    }
+  }
+
   Future<void> _createAdmin() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    // Check email one more time before submitting
+    await _checkEmailDuplicate();
+    if (_emailError != null) {
+      return;
+    }
+    
     if (_selectedClassId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -80,11 +131,31 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
         ),
       );
       Navigator.pop(context);
+    } on EmailAlreadyExistsException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.message,
+            style: GoogleFonts.dmSans(),
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } on PhoneNumberFormatException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.message,
+            style: GoogleFonts.dmSans(),
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "❌ Error: $e",
+            "❌ Error: ${e.toString()}",
             style: GoogleFonts.dmSans(),
           ),
           backgroundColor: AppColors.error,
@@ -95,13 +166,35 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
     }
   }
 
-  InputDecoration _inputDecoration(String label, IconData icon) {
+  String? _validatePhoneNumber(String? value) {
+    if (value == null || value.isEmpty) {
+      return "Phone number is required";
+    }
+    
+    // Remove any non-digit characters
+    final cleanedPhone = value.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // Check if phone starts with 09
+    if (!cleanedPhone.startsWith('09') || !cleanedPhone.startsWith('07') ) {
+      return "Phone number must start with '09' or '07' ";
+    }
+    
+    // Check total length is 10 digits
+    if (cleanedPhone.length != 10) {
+      return "Phone number must be exactly 10 digits";
+    }
+    
+    return null;
+  }
+
+  InputDecoration _inputDecoration(String label, IconData icon, {Widget? suffixIcon}) {
     return InputDecoration(
       labelText: label,
       labelStyle: GoogleFonts.dmSans(
         color: AppColors.textSecondary,
       ),
       prefixIcon: Icon(icon, color: AppColors.primary),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: AppColors.surface,
       enabledBorder: OutlineInputBorder(
@@ -150,8 +243,6 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // Header
-             
               const SizedBox(height: 10),
 
               // Name Field
@@ -185,13 +276,41 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                decoration: _inputDecoration("Email Address", Icons.email_outlined),
+                decoration: _inputDecoration(
+                  "Email Address", 
+                  Icons.email_outlined,
+                  suffixIcon: _isCheckingEmail
+                      ? Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
+                onChanged: (value) {
+                  // Clear error when user starts typing again
+                  if (_emailError != null && value.trim().isNotEmpty) {
+                    setState(() => _emailError = null);
+                  }
+                },
+                onEditingComplete: _checkEmailDuplicate,
                 validator: (val) {
                   if (val == null || val.isEmpty) {
                     return "Email is required";
                   }
                   if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) {
                     return "Please enter a valid email";
+                  }
+                  if (_emailError != null) {
+                    return _emailError;
                   }
                   return null;
                 },
@@ -205,8 +324,20 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
               // Password Field
               TextFormField(
                 controller: _passwordController,
-                obscureText: true,
-                decoration: _inputDecoration("Password", Icons.lock_outline),
+                obscureText: !_isPasswordVisible,
+                decoration: _inputDecoration("Password", Icons.lock_outline,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                      color: AppColors.primary,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isPasswordVisible = !_isPasswordVisible;
+                      });
+                    },
+                  ),
+                ),
                 validator: (val) {
                   if (val == null || val.isEmpty) {
                     return "Password is required";
@@ -227,13 +358,20 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
               TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
-                decoration: _inputDecoration("Phone Number", Icons.phone_outlined),
-                validator: (val) =>
-                    val == null || val.isEmpty ? "Phone number is required" : null,
+                maxLength: 10,
+                decoration: _inputDecoration(
+                  "Phone Number", 
+                  Icons.phone_outlined,
+                ),
+                validator: _validatePhoneNumber,
                 style: GoogleFonts.dmSans(
                   color: AppColors.textPrimary,
                   fontSize: 16,
                 ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
               ),
               const SizedBox(height: 16),
 
@@ -281,7 +419,7 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
                       ? Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(
+                            const SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
@@ -349,4 +487,23 @@ class _CreateAdminScreenState extends State<CreateAdminScreen> {
     _phoneController.dispose();
     super.dispose();
   }
+}
+
+// Custom exceptions for better error handling
+class EmailAlreadyExistsException implements Exception {
+  final String message;
+  
+  EmailAlreadyExistsException(this.message);
+  
+  @override
+  String toString() => message;
+}
+
+class PhoneNumberFormatException implements Exception {
+  final String message;
+  
+  PhoneNumberFormatException(this.message);
+  
+  @override
+  String toString() => message;
 }

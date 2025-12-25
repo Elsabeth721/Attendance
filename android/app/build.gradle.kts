@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.attendance"
-        minSdk = 21
+        minSdk = flutter.minSdkVersion
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
